@@ -1,0 +1,70 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from pathlib import Path
+from layer import MyNet
+from loss import loss
+print(torch.cuda.is_available())
+device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(device)
+LENGTH=100
+in_dim=10
+out_dim=200
+k_hook=2.0
+gravity=0.03
+pin_weight=1e4
+leng_origin=1.0
+
+base_output=torch.cat((torch.arange(LENGTH,dtype=torch.float32,device=device)*leng_origin,torch.zeros(LENGTH,device=device)),dim=-1)
+Path("net").mkdir(exist_ok=True)
+
+def split_xy(q,length):
+    return q[:,:length],q[:,length:]
+
+def project_left(q,base_output,length):
+    q=q.clone()
+    q[:,0]=base_output[0]
+    q[:,length]=base_output[length]
+    return q
+
+def potential(q):
+    x,y=split_xy(q,LENGTH)
+    dx=x[:,1:]-x[:,:-1]
+    dy=y[:,1:]-y[:,:-1]
+    spring_len=torch.sqrt(dx*dx+dy*dy+1e-8)
+    spring_energy=0.5*k_hook*((spring_len-leng_origin)**2).sum(dim=-1)
+    gravity_energy=gravity*y.sum(dim=-1)
+    pin_energy=pin_weight*((x[:,0]-base_output[0])**2+(y[:,0]-base_output[LENGTH])**2)
+    return spring_energy+gravity_energy+pin_energy
+
+net=MyNet(in_dim,out_dim,base_output).to(device)
+
+optimizer=torch.optim.AdamW(
+    net.parameters(),
+    lr=1e-4,
+    weight_decay=1e-4
+)
+
+n_train_iters=10000
+batch_size=100
+
+for i in range(n_train_iters):
+    t_schedule=i/n_train_iters
+    z=torch.randn(batch_size,in_dim,device=device)
+    loss_value=loss(
+        net=net,
+        z=z,
+        t_schedule=t_schedule,
+        potential=potential,
+        sigma=1.0,
+        weight_expand=0.25,
+        project_q=lambda q: project_left(q,base_output,LENGTH),
+    )
+    optimizer.zero_grad()
+    loss_value.backward()
+    optimizer.step()
+
+    if i%100==0:
+        print(i,loss_value.item())
+
+torch.save(net.state_dict(),"net/mlp.pt")
