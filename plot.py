@@ -6,7 +6,7 @@ import torch.autograd.functional as F
 device=torch.device("cpu")
 LENGTH=100
 in_dim=10
-out_dim=200
+out_dim=198
 k_hook=2.0
 leng_origin=1.0
 base_output=torch.cat((torch.arange(LENGTH,dtype=torch.float32,device=device)*leng_origin,
@@ -19,22 +19,16 @@ pos_Q=base_output.clone()
 vel_Q=torch.zeros(2*LENGTH,device=device)
 pos_Z=torch.zeros(in_dim,device=device)
 vel_Z=torch.zeros(in_dim,device=device)
-for i in range(LENGTH//2):
-    vel_Q[i+LENGTH+LENGTH//2]=-1
+vel_Q[2*LENGTH-1]=-5
 # 反解pos_Z
 def solve_z_from_q(net,z,Q):
     z=z.detach().clone().requires_grad_(True)
-    lr=1e-3
+    optimizer=torch.optim.AdamW([z],lr=1e-4,weight_decay=1e-4)
     for _ in range(10000):
-        q=net(z[None,:])
-        loss=((q-Q[None,:])**2).mean()
-        if loss.item()<1e-5:
-            break
-        if z.grad is not None:
-            z.grad.zero_()
+        loss=((net(z[None,:])[0]-Q[:])**2).mean()
+        optimizer.zero_grad()
         loss.backward()
-        with torch.no_grad():
-            z-=z.grad*lr
+        optimizer.step()
     return z.detach()
 
 # Jacobi inverse
@@ -84,7 +78,7 @@ def acceleration(net,pos_Z:torch.tensor,vel_Z:torch.tensor):
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
-dt=0.3
+dt=0.1
 n_frames=500
 
 def q_to_xy(q):
@@ -113,6 +107,6 @@ def update(frame):
     ax.set_title(f"frame={frame}, dt={dt:g}")
     return line,pin
 
-anim=FuncAnimation(fig,update,frames=n_frames,interval=dt*10,blit=False)
+anim=FuncAnimation(fig,update,frames=n_frames,interval=dt,blit=False)
 fig._anim=anim
 plt.show()

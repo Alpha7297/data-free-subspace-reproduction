@@ -9,7 +9,7 @@ device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 LENGTH=100
 in_dim=10
-out_dim=200
+out_dim=198
 k_hook=2.0
 leng_origin=1.0
 base_output=torch.cat((torch.arange(LENGTH,dtype=torch.float32,device=device)*leng_origin,
@@ -18,12 +18,6 @@ Path("net").mkdir(exist_ok=True)
 
 def split_xy(q,length):
     return q[:,:length],q[:,length:]
-
-def project_left(q,base_output,length):
-    q=q.clone()
-    q[:,0]=base_output[0]
-    q[:,length]=base_output[length]
-    return q
 
 def potential(q):
     x,y=split_xy(q,LENGTH)
@@ -54,7 +48,6 @@ for i in range(n_train_iters):
         potential=potential,
         sigma=1.0,
         weight_expand=0.25,
-        project_q=lambda q: project_left(q,base_output,LENGTH),
     )
     optimizer.zero_grad()
     loss_value.backward()
