@@ -8,7 +8,7 @@ print(torch.cuda.is_available())
 device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 LENGTH=100
-in_dim=10
+in_dim=20
 out_dim=198
 k_hook=2.0
 leng_origin=1.0
@@ -35,8 +35,8 @@ optimizer=torch.optim.AdamW(
     weight_decay=1e-4
 )
 
-n_train_iters=10000
-batch_size=100
+n_train_iters=500000
+batch_size=32
 
 for i in range(n_train_iters):
     t_schedule=i/n_train_iters
@@ -53,7 +53,7 @@ for i in range(n_train_iters):
     loss_value.backward()
     optimizer.step()
 
-    if i%100==0:
+    if i%1000==0:
         print(i,loss_value.item())
-
-torch.save(net.state_dict(),"net/mlp.pt")
+    if i%10000==0:
+        torch.save(net.state_dict(),f"net/indim-20-{i}.pt")

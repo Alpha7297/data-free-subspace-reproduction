@@ -5,32 +5,32 @@ import torch.nn as nn
 import torch.autograd.functional as F
 device=torch.device("cpu")
 LENGTH=100
-in_dim=10
+in_dim=20
 out_dim=198
 k_hook=2.0
 leng_origin=1.0
 base_output=torch.cat((torch.arange(LENGTH,dtype=torch.float32,device=device)*leng_origin,
                        torch.zeros(LENGTH,device=device)),dim=-1)
 net=MyNet(in_dim,out_dim,base_output)
-state_dict=torch.load("net/mlp.pt",map_location=device)
+state_dict=torch.load("net/indim-20-490000.pt",map_location=device)
 net.load_state_dict(state_dict)
 net.eval()
 pos_Q=base_output.clone()
 vel_Q=torch.zeros(2*LENGTH,device=device)
 pos_Z=torch.zeros(in_dim,device=device)
 vel_Z=torch.zeros(in_dim,device=device)
-vel_Q[2*LENGTH-1]=-5
+for i in range(LENGTH//2):
+    vel_Q[i+LENGTH+LENGTH//2]=-1
 # 反解pos_Z
 def solve_z_from_q(net,z,Q):
     z=z.detach().clone().requires_grad_(True)
-    optimizer=torch.optim.AdamW([z],lr=1e-4,weight_decay=1e-4)
+    optimizer=torch.optim.AdamW([z],lr=1e-2,weight_decay=1e-4)
     for _ in range(10000):
         loss=((net(z[None,:])[0]-Q[:])**2).mean()
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
     return z.detach()
-
 # Jacobi inverse
 def Jacobi_inverse(J):
     m,n=J.shape
@@ -75,38 +75,23 @@ def acceleration(net,pos_Z:torch.tensor,vel_Z:torch.tensor):
     acc_Z=J_dagger@(f_hook-H)
     return acc_Z.detach()
 
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
+dt=0.01
+frames=500
 
-dt=0.1
-n_frames=500
+with open("experiment/data_free_pos.csv",'w') as f1:
+    with open("experiment/data_free_vel.csv",'w') as f2:
+        for frame in range(frames):
+            for i in range(LENGTH):
+                f1.write(f"{pos_Q[i]} {pos_Q[i+LENGTH]} ")
+                f2.write(f"{vel_Q[i]} {vel_Q[i+LENGTH]} ")
+            f1.write("\n")
+            f2.write("\n")
+            def f(z):
+                return net(z[None,:])[0]
+            acc_Z=acceleration(net,pos_Z,vel_Z)
+            vel_Z+=dt*acc_Z
+            pos_Z+=dt*vel_Z
+            pos_Q=net(pos_Z[None,:])[0]
+            vel_Q=F.jacobian(f,pos_Z)@vel_Z
 
-def q_to_xy(q):
-    q=q.detach().cpu()
-    return q[:LENGTH],q[LENGTH:]
-
-fig,ax=plt.subplots()
-q=net(pos_Z[None,:])[0]
-x,y=q_to_xy(q)
-line,=ax.plot(x,y,"o-",markersize=3,linewidth=1)
-pin=ax.scatter([x[0]],[y[0]],c="red",s=40,zorder=3)
-ax.set_aspect("equal",adjustable="box")
-ax.set_xlim(-2,LENGTH*leng_origin+2)
-ax.set_ylim(-20,20)
-ax.grid(True,alpha=0.3)
-
-def update(frame):
-    global pos_Z,vel_Z
-    acc_Z=acceleration(net,pos_Z,vel_Z)
-    vel_Z=vel_Z+dt*acc_Z
-    pos_Z=pos_Z+dt*vel_Z
-    q=net(pos_Z[None,:])[0]
-    x,y=q_to_xy(q)
-    line.set_data(x,y)
-    pin.set_offsets([[x[0],y[0]]])
-    ax.set_title(f"frame={frame}, dt={dt:g}")
-    return line,pin
-
-anim=FuncAnimation(fig,update,frames=n_frames,interval=dt,blit=False)
-fig._anim=anim
-plt.show()
+    
