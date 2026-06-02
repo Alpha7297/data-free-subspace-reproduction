@@ -11,11 +11,9 @@ LENGTH=100
 in_dim=10
 out_dim=200
 k_hook=2.0
-gravity=0.03
-pin_weight=1e4
 leng_origin=1.0
-
-base_output=torch.cat((torch.arange(LENGTH,dtype=torch.float32,device=device)*leng_origin,torch.zeros(LENGTH,device=device)),dim=-1)
+base_output=torch.cat((torch.arange(LENGTH,dtype=torch.float32,device=device)*leng_origin,
+                       torch.zeros(LENGTH,device=device)),dim=-1)
 Path("net").mkdir(exist_ok=True)
 
 def split_xy(q,length):
@@ -33,9 +31,7 @@ def potential(q):
     dy=y[:,1:]-y[:,:-1]
     spring_len=torch.sqrt(dx*dx+dy*dy+1e-8)
     spring_energy=0.5*k_hook*((spring_len-leng_origin)**2).sum(dim=-1)
-    gravity_energy=gravity*y.sum(dim=-1)
-    pin_energy=pin_weight*((x[:,0]-base_output[0])**2+(y[:,0]-base_output[LENGTH])**2)
-    return spring_energy+gravity_energy+pin_energy
+    return spring_energy
 
 net=MyNet(in_dim,out_dim,base_output).to(device)
 
