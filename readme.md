@@ -1,10 +1,16 @@
 # Data-Free Learning of Reduced-Order Kinematics论文复现
 
+## requirements
+
+pytorch numpy scipy matplotlib
+
 ## 项目结构
 
-line1d为一维弹簧链测试
+cloth2d为2D弹簧质点网格，复杂系统用于测试静力学特征
 
-cloth2d为2D弹簧质点网格
+cloth2d/plot.py 使用matplotlib展现仿真结果
+
+line1d为一维弹簧链，简单系统用于测试动力学特征
 
 ## 项目说明
 

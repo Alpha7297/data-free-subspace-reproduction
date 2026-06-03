@@ -19,7 +19,7 @@ optimizer=torch.optim.AdamW(
     weight_decay=1e-4
 )
 
-num_epoches=100000
+num_epoches=500000
 batch_size=32
 
 for epoch in range(num_epoches):
@@ -34,4 +34,4 @@ for epoch in range(num_epoches):
     if epoch%1000==0:
         print(f"{epoch} {loss_value.item()}")
     if epoch%10000==0:
-        torch.save(net.state_dict(),f"cloth2d/net/indim-20-{epoch}.pt")
+        torch.save(net.state_dict(),f"cloth2d/net/indim-40-{epoch}.pt")

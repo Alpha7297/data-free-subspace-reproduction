@@ -12,7 +12,7 @@ from loss import potential
 
 device=torch.device("cpu")
 ROOT=Path(__file__).resolve().parents[1]
-MODEL_PATH=ROOT/"cloth2d"/"net"/f"indim-{in_dim}-90000.pt"
+MODEL_PATH=ROOT/"cloth2d"/"net"/f"indim-{in_dim}-300000.pt"
 DT=0.01
 FRAMES=500
 Z_FORCE=5.0
