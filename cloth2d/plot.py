@@ -2,6 +2,9 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+import numpy as np
+import scipy.sparse as sp
+import scipy.sparse.linalg as spla
 import torch
 import torch.autograd.functional as AF
 
@@ -12,12 +15,14 @@ from loss import potential
 
 device=torch.device("cpu")
 ROOT=Path(__file__).resolve().parents[1]
-MODEL_PATH=ROOT/"cloth2d"/"net"/f"indim-{in_dim}-300000.pt"
-DT=0.01
+MODEL_PATH=ROOT/"cloth2d"/"net"/f"indim-{in_dim}-200000.pt"
+DT=0.1
 FRAMES=500
-Z_FORCE=5.0
+Z_FORCE=3.0
 DAMPING=0.995
 FORCE_IDS=[(HEIGHT//2)*WIDTH+(WIDTH//2)]
+FREE_IDS=[i for i in range(HEIGHT*WIDTH) if i not in fixed_id]
+FREE_ID_MAP={i:n for n,i in enumerate(FREE_IDS)}
 
 
 def init_pos():
@@ -26,6 +31,14 @@ def init_pos():
     I,J=torch.meshgrid(i,j,indexing="ij")
     K=torch.zeros_like(I)
     return torch.stack((I.T,J.T,K),dim=-1).reshape(-1,3)
+
+
+def init_pos_np():
+    i=np.arange(HEIGHT,dtype=np.float64)
+    j=np.arange(WIDTH,dtype=np.float64)
+    I,J=np.meshgrid(i,j,indexing="ij")
+    K=np.zeros_like(I)
+    return np.stack((I.T,J.T,K),axis=-1).reshape(-1,3)
 
 
 def load_net():
@@ -40,7 +53,7 @@ def load_net():
 def solve_z_from_q(net,z,target_q):
     z=z.detach().clone().requires_grad_(True)
     optimizer=torch.optim.AdamW([z],lr=1e-2,weight_decay=1e-4)
-    for _ in range(5000):
+    for _ in range(50000):
         q=net(z[None,:])[0]
         loss=((q-target_q)**2).mean()
         optimizer.zero_grad()
@@ -66,7 +79,7 @@ def force_external():
     return force.reshape(-1)
 
 
-def acceleration(net,pos_Z,vel_Z):
+def data_free_acceleration(net,pos_Z,vel_Z):
     z=pos_Z.detach().clone().requires_grad_(True)
     def f(z_in):
         return net(z_in[None,:])[0]
@@ -76,17 +89,99 @@ def acceleration(net,pos_Z,vel_Z):
     force_internal=-AF.jacobian(lambda q_in:potential(q_in[None,:,:])[0],q).reshape(-1)
     force_q=force_internal+force_external()
     J=AF.jacobian(f_flat,z)
-    acc_Z=jacobi_inverse(J)@force_q
-    return acc_Z.detach()
+    return (jacobi_inverse(J)@force_q).detach()
 
 
-def draw_state(ax,q):
-    q=q.detach().cpu()
+def spring_pairs():
+    pairs=[]
+    for i in range(HEIGHT):
+        for j in range(WIDTH):
+            idx=i*WIDTH+j
+            if i+1<HEIGHT:
+                pairs.append((idx,(i+1)*WIDTH+j))
+            if j+1<WIDTH:
+                pairs.append((idx,i*WIDTH+j+1))
+    return pairs
+
+
+SPRING_PAIRS=spring_pairs()
+
+
+def free_id(i,d):
+    return FREE_ID_MAP[i]*3+d
+
+
+def implicit_external_force_np():
+    force=np.zeros((HEIGHT*WIDTH,3),dtype=np.float64)
+    if FORCE_IDS is None:
+        force[:,2]=Z_FORCE
+        force[fixed_id,2]=0.0
+    else:
+        force[FORCE_IDS,2]=Z_FORCE
+    return force
+
+
+def internal_force_and_blocks(pos):
+    force=np.zeros_like(pos)
+    blocks=[]
+    eye=np.eye(3,dtype=np.float64)
+    for a,b in SPRING_PAIRS:
+        l=pos[a]-pos[b]
+        norm=np.sqrt(np.dot(l,l))+1e-8
+        ratio=(norm-origin_len)/norm
+        spring_force=k_hook*ratio*l
+        force[a]-=spring_force
+        force[b]+=spring_force
+        outer=np.outer(l,l)
+        D=-k_hook*(ratio*eye+origin_len*outer/(norm**3))
+        blocks.extend(((a,a,D),(a,b,-D),(b,a,-D),(b,b,D)))
+    return force,blocks
+
+
+def implicit_step(pos,vel):
+    force,blocks=internal_force_and_blocks(pos)
+    force+=implicit_external_force_np()
+    rows=[]
+    cols=[]
+    data=[]
+    bvec=np.zeros(len(FREE_IDS)*3,dtype=np.float64)
+    for bi,bj,block in blocks:
+        if bi in fixed_id or bj in fixed_id:
+            continue
+        for r in range(3):
+            for c in range(3):
+                rows.append(free_id(bi,r))
+                cols.append(free_id(bj,c))
+                data.append(-DT*DT*block[r,c])
+    vel=DAMPING*vel
+    for i in FREE_IDS:
+        for d in range(3):
+            idx=free_id(i,d)
+            rows.append(idx)
+            cols.append(idx)
+            data.append(1.0)
+            bvec[idx]=DT*vel[i,d]+DT*DT*force[i,d]
+    size=len(FREE_IDS)*3
+    A=sp.coo_matrix((data,(rows,cols)),shape=(size,size)).tocsr()
+    dq=spla.spsolve(A,bvec).reshape(len(FREE_IDS),3)
+    pos=pos.copy()
+    vel=vel.copy()
+    pos[FREE_IDS]+=dq
+    vel[FREE_IDS]=dq/DT
+    pos[fixed_id]=init_pos_np()[fixed_id]
+    vel[fixed_id]=0.0
+    return pos,vel
+
+
+def draw_state(ax,q,title):
+    if isinstance(q,torch.Tensor):
+        q=q.detach().cpu().numpy()
+    center=(HEIGHT//2)*WIDTH+(WIDTH//2)
     X=q[:,0].reshape(WIDTH,HEIGHT).T
     Y=q[:,1].reshape(WIDTH,HEIGHT).T
     Z=q[:,2].reshape(WIDTH,HEIGHT).T
     ax.clear()
-    ax.plot_surface(X.numpy(),Y.numpy(),Z.numpy(),cmap="viridis",linewidth=0,antialiased=True)
+    ax.plot_surface(X,Y,Z,cmap="viridis",linewidth=0,antialiased=True)
     ax.scatter(q[fixed_id,0],q[fixed_id,1],q[fixed_id,2],c="red",s=30)
     ax.set_xlim(0,HEIGHT)
     ax.set_ylim(0,WIDTH)
@@ -94,28 +189,37 @@ def draw_state(ax,q):
     ax.set_xlabel("x")
     ax.set_ylabel("y")
     ax.set_zlabel("z")
+    ax.set_title(f"{title},center_z={q[center,2]:.4g}")
 
 
 net,base_output=load_net()
-pos_Z=torch.zeros(in_dim,device=device)
-vel_Z=torch.zeros(in_dim,device=device)
-pos_Z=solve_z_from_q(net,pos_Z,base_output)
+data_free_pos_Z=torch.zeros(in_dim,device=device)
+data_free_vel_Z=torch.zeros(in_dim,device=device)
+data_free_pos_Z=solve_z_from_q(net,data_free_pos_Z,base_output)
+implicit_pos=init_pos_np()
+implicit_vel=np.zeros_like(implicit_pos)
 
-fig=plt.figure()
-ax=fig.add_subplot(111,projection="3d")
-draw_state(ax,net(pos_Z[None,:])[0])
+fig=plt.figure(figsize=(12,6))
+ax_implicit=fig.add_subplot(121,projection="3d")
+ax_data_free=fig.add_subplot(122,projection="3d")
+draw_state(ax_implicit,implicit_pos,"implicit")
+draw_state(ax_data_free,net(data_free_pos_Z[None,:])[0],"data_free")
+ax_implicit.view_init(elev=25,azim=-60)
+ax_data_free.view_init(elev=25,azim=-60)
+fig.tight_layout()
 
 
 def update(frame):
-    global pos_Z,vel_Z
-    acc_Z=acceleration(net,pos_Z,vel_Z)
-    vel_Z=DAMPING*vel_Z+DT*acc_Z
-    pos_Z=pos_Z+DT*vel_Z
-    q=net(pos_Z[None,:])[0]
-    draw_state(ax,q)
-    ax.set_title(f"frame={frame},dt={DT:g},force_z={Z_FORCE:g}")
+    global implicit_pos,implicit_vel,data_free_pos_Z,data_free_vel_Z
+    implicit_pos,implicit_vel=implicit_step(implicit_pos,implicit_vel)
+    acc_Z=data_free_acceleration(net,data_free_pos_Z,data_free_vel_Z)
+    data_free_vel_Z=DAMPING*data_free_vel_Z+DT*acc_Z
+    data_free_pos_Z=data_free_pos_Z+DT*data_free_vel_Z
+    q_data_free=net(data_free_pos_Z[None,:])[0]
+    draw_state(ax_implicit,implicit_pos,f"implicit frame={frame}")
+    draw_state(ax_data_free,q_data_free,f"data_free frame={frame}")
 
 
-anim=FuncAnimation(fig,update,frames=FRAMES,interval=DT*10,blit=False)
+anim=FuncAnimation(fig,update,frames=FRAMES,interval=DT*100,blit=False)
 fig._anim=anim
 plt.show()
