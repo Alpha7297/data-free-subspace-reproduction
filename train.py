@@ -35,7 +35,7 @@ optimizer=torch.optim.AdamW(
     weight_decay=1e-4
 )
 
-n_train_iters=500000
+n_train_iters=5000
 batch_size=32
 
 for i in range(n_train_iters):
@@ -56,4 +56,5 @@ for i in range(n_train_iters):
     if i%1000==0:
         print(i,loss_value.item())
     if i%10000==0:
-        torch.save(net.state_dict(),f"net/indim-20-{i}.pt")
+        torch.save(net.state_dict(),f"net/indim-10-{i}.pt")
+torch.save(net.state_dict(),f"net/indim-20-{n_train_iters}.pt")

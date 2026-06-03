@@ -5,14 +5,14 @@ import torch.nn as nn
 import torch.autograd.functional as F
 device=torch.device("cpu")
 LENGTH=100
-in_dim=20
+in_dim=10
 out_dim=198
 k_hook=2.0
 leng_origin=1.0
 base_output=torch.cat((torch.arange(LENGTH,dtype=torch.float32,device=device)*leng_origin,
                        torch.zeros(LENGTH,device=device)),dim=-1)
 net=MyNet(in_dim,out_dim,base_output)
-state_dict=torch.load("net/indim-20-490000.pt",map_location=device)
+state_dict=torch.load("net/indim-10-100000.pt",map_location=device)
 net.load_state_dict(state_dict)
 net.eval()
 pos_Q=base_output.clone()

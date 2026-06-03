@@ -69,8 +69,8 @@ def check_conditions(data_free_pos, data_free_vel, explicit_pos, explicit_vel):
 def main():
     data_free_pos = read_series("data_free_pos.csv")
     data_free_vel = read_series("data_free_vel.csv")
-    explicit_pos = read_series("implicit_pos.csv")
-    explicit_vel = read_series("implicit_vel.csv")
+    explicit_pos = read_series("explicit_pos.csv")
+    explicit_vel = read_series("explicit_vel.csv")
 
     check_conditions(data_free_pos, data_free_vel, explicit_pos, explicit_vel)
     print()
