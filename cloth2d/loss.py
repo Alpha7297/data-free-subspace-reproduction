@@ -18,12 +18,12 @@ def potential(q):
     return 0.5*k_hook*(energy_x+energy_y)# [B]
 
 def loss(net:nn.Module,z,t_schedule):
-    q=net(z)
+    q=net(z,t_schedule=t_schedule)
     E_spring=potential(q)
     new_q=q.reshape(-1,HEIGHT*WIDTH,3)
     diff_q=new_q[None,:,:,:]-new_q[:,None,:,:]# [B,B,WH,3]
     diff_x=z[None,:,:]-z[:,None,:]# [B,B,in_dim]
     dist_q=(diff_q**2).sum(dim=(2,3))
     dist_x=(diff_x**2).sum(dim=-1)
-    E_norm=(torch.log(t_schedule*dist_x*sigma+eps)-torch.log(dist_q+eps)).mean(dim=-1)
+    E_norm=((torch.log(t_schedule*dist_x*sigma+eps)-torch.log(dist_q+eps))**2).mean(dim=-1)
     return (E_spring+norm2weight*E_norm).mean(dim=-1)

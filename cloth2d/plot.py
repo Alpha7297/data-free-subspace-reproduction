@@ -53,7 +53,7 @@ def load_net():
 def solve_z_from_q(net,z,target_q):
     z=z.detach().clone().requires_grad_(True)
     optimizer=torch.optim.AdamW([z],lr=1e-2,weight_decay=1e-4)
-    for _ in range(50000):
+    for _ in range(10000):
         q=net(z[None,:])[0]
         loss=((q-target_q)**2).mean()
         optimizer.zero_grad()
